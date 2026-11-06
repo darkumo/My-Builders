@@ -1,2 +1,2 @@
 # My-Builders
-Progress tracking fan-app not affiliated with Supercell.
+Clash of Clans progress tracking fan-made app not affiliated with Supercell.
