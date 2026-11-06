@@ -172,8 +172,18 @@ jobs:
               @JavascriptInterface public void showKeyboard() {
                 runOnUiThread(() -> {
                   w.requestFocus();
-                  android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                  w.postDelayed(() -> { if (im != null) im.showSoftInput(w, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT); }, 120);
+                  w.postDelayed(() -> {
+                    // put the cursor back in the text box now that the WebView has focus, then ask for the keyboard
+                    js("window.refocusPaste&&refocusPaste()");
+                    w.postDelayed(() -> {
+                      if (Build.VERSION.SDK_INT >= 30) {
+                        WindowInsetsController c = getWindow().getInsetsController();
+                        if (c != null) c.show(WindowInsets.Type.ime());
+                      }
+                      android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                      if (im != null) im.showSoftInput(w, 0);
+                    }, 80);
+                  }, 80);
                 });
               }
               @JavascriptInterface public String repo() {
