@@ -63,7 +63,7 @@ jobs:
                 android:theme="@android:style/Theme.Material.NoActionBar">
               <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
                   android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-                  android:windowSoftInputMode="adjustResize">
+                  android:windowSoftInputMode="adjustNothing">
                 <intent-filter>
                   <action android:name="android.intent.action.MAIN"/>
                   <category android:name="android.intent.category.LAUNCHER"/>
@@ -107,7 +107,7 @@ jobs:
           import android.widget.FrameLayout;
           import org.json.JSONObject;
           public class MainActivity extends Activity {
-            WebView w; FrameLayout root;
+            WebView w; FrameLayout root; String insets = "";
             void js(String s) { if (w != null) w.evaluateJavascript(s, null); }
             @Override protected void onCreate(Bundle b) {
               super.onCreate(b);
@@ -121,14 +121,22 @@ jobs:
               getWindow().setNavigationBarColor(Color.TRANSPARENT);
               if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(false);
               else root.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+              // the page draws behind the status bar, nav bar and keyboard; it gets their sizes and pads itself
               root.setOnApplyWindowInsetsListener((v, ins) -> {
+                float d = getResources().getDisplayMetrics().density;
+                int l, r, t, b, k;
                 if (Build.VERSION.SDK_INT >= 30) {
-                  android.graphics.Insets s = ins.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
-                  v.setPadding(s.left, s.top, s.right, s.bottom);
-                  return WindowInsets.CONSUMED;
+                  android.graphics.Insets s = ins.getInsets(WindowInsets.Type.systemBars());
+                  l = s.left; r = s.right; t = s.top; b = s.bottom;
+                  k = ins.getInsets(WindowInsets.Type.ime()).bottom;
+                } else {
+                  l = ins.getSystemWindowInsetLeft(); r = ins.getSystemWindowInsetRight(); t = ins.getSystemWindowInsetTop();
+                  b = ins.getStableInsetBottom(); k = Math.max(0, ins.getSystemWindowInsetBottom() - b);
                 }
-                v.setPadding(ins.getSystemWindowInsetLeft(), ins.getSystemWindowInsetTop(), ins.getSystemWindowInsetRight(), ins.getSystemWindowInsetBottom());
-                return ins.consumeSystemWindowInsets();
+                v.setPadding(l, 0, r, 0);
+                insets = "window.setInsets&&setInsets(" + (t / d) + "," + (b / d) + "," + (k / d) + ")";
+                js(insets);
+                return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : ins.consumeSystemWindowInsets();
               });
               WebSettings st = w.getSettings();
               st.setJavaScriptEnabled(true);
@@ -141,6 +149,7 @@ jobs:
                   if (r.getUrl().toString().startsWith("http")) { open(r.getUrl().toString()); return true; }
                   return false;
                 }
+                @Override public void onPageFinished(WebView v, String u) { if (!insets.isEmpty()) js(insets); }
               });
               w.loadUrl("file:///android_asset/index.html");
             }
@@ -159,6 +168,14 @@ jobs:
                 return t == null ? "" : t.toString();
               }
               @JavascriptInterface public void openUrl(String u) { runOnUiThread(() -> open(u)); }
+              // pages can't open the keyboard on their own in Android; this does it after the text box gets focus
+              @JavascriptInterface public void showKeyboard() {
+                runOnUiThread(() -> {
+                  w.requestFocus();
+                  android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                  w.postDelayed(() -> { if (im != null) im.showSoftInput(w, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT); }, 120);
+                });
+              }
               @JavascriptInterface public String repo() {
                 try {
                   java.io.InputStream in = getAssets().open("repo.txt");
