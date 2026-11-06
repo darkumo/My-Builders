@@ -124,17 +124,17 @@ jobs:
               // the page draws behind the status bar, nav bar and keyboard; it gets their sizes and pads itself
               root.setOnApplyWindowInsetsListener((v, ins) -> {
                 float d = getResources().getDisplayMetrics().density;
-                int l, r, t, b, k;
+                int il, ir, it, ib, ik;
                 if (Build.VERSION.SDK_INT >= 30) {
                   android.graphics.Insets s = ins.getInsets(WindowInsets.Type.systemBars());
-                  l = s.left; r = s.right; t = s.top; b = s.bottom;
-                  k = ins.getInsets(WindowInsets.Type.ime()).bottom;
+                  il = s.left; ir = s.right; it = s.top; ib = s.bottom;
+                  ik = ins.getInsets(WindowInsets.Type.ime()).bottom;
                 } else {
-                  l = ins.getSystemWindowInsetLeft(); r = ins.getSystemWindowInsetRight(); t = ins.getSystemWindowInsetTop();
-                  b = ins.getStableInsetBottom(); k = Math.max(0, ins.getSystemWindowInsetBottom() - b);
+                  il = ins.getSystemWindowInsetLeft(); ir = ins.getSystemWindowInsetRight(); it = ins.getSystemWindowInsetTop();
+                  ib = ins.getStableInsetBottom(); ik = Math.max(0, ins.getSystemWindowInsetBottom() - ib);
                 }
-                v.setPadding(l, 0, r, 0);
-                insets = "window.setInsets&&setInsets(" + (t / d) + "," + (b / d) + "," + (k / d) + ")";
+                v.setPadding(il, 0, ir, 0);
+                insets = "window.setInsets&&setInsets(" + (it / d) + "," + (ib / d) + "," + (ik / d) + ")";
                 js(insets);
                 return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : ins.consumeSystemWindowInsets();
               });
