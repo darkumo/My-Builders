@@ -1,0 +1,225 @@
+name: Construir APK
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Crear proyecto Android
+        run: |
+          P=app/src/main
+          J=$P/java/com/dark/constructores
+          mkdir -p $P/assets $J $P/res/drawable
+          cp index.html $P/assets/index.html
+          # the app learns its own repo name, so update checks work whatever the repo is called
+          echo "$GITHUB_REPOSITORY" > $P/assets/repo.txt
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "MisConstructores"
+          include ':app'
+          EOF
+          echo "plugins { id 'com.android.application' version '8.7.3' apply false }" > build.gradle
+          echo "android.useAndroidX=true" > gradle.properties
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          def appVer = (rootProject.file('index.html').text =~ /APP_VERSION='([^']+)'/)[0][1]
+          android {
+            namespace 'com.dark.constructores'
+            compileSdk 35
+            defaultConfig {
+              applicationId "com.dark.constructores"
+              minSdk 24
+              targetSdk 35
+              versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+              versionName appVer
+            }
+            signingConfigs {
+              debug {
+                storeFile rootProject.file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+              }
+            }
+            lint { abortOnError false; checkReleaseBuilds false }
+          }
+          EOF
+          cat > $P/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application android:label="My Builders" android:icon="@drawable/ic"
+                android:theme="@android:style/Theme.Material.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
+                  android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+                  android:windowSoftInputMode="adjustResize">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > $P/res/drawable/ic.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+            <path android:fillColor="#5A3D26" android:pathData="M11,0h26a11,11 0,0 1,11,11v26a11,11 0,0 1,-11,11h-26a11,11 0,0 1,-11,-11v-26a11,11 0,0 1,11,-11z"/>
+            <group android:rotation="40" android:pivotX="22" android:pivotY="22">
+              <path android:fillColor="#C8955A" android:pathData="M22.0,13h0.0a1.5,1.5 0,0 1,1.5,1.5v21.0a1.5,1.5 0,0 1,-1.5,1.5h-0.0a1.5,1.5 0,0 1,-1.5,-1.5v-21.0a1.5,1.5 0,0 1,1.5,-1.5z"/>
+              <path android:fillColor="#D9DDE3" android:pathData="M15,8h14a2,2 0,0 1,2,2v3.5a2,2 0,0 1,-2,2h-14a2,2 0,0 1,-2,-2v-3.5a2,2 0,0 1,2,-2z"/>
+              <path android:fillColor="#AEB4BD" android:pathData="M14.2,8h0.8000000000000003a1.2,1.2 0,0 1,1.2,1.2v5.1a1.2,1.2 0,0 1,-1.2,1.2h-0.8000000000000003a1.2,1.2 0,0 1,-1.2,-1.2v-5.1a1.2,1.2 0,0 1,1.2,-1.2z"/>
+              <path android:fillColor="#AEB4BD" android:pathData="M29.0,8h0.8000000000000003a1.2,1.2 0,0 1,1.2,1.2v5.1a1.2,1.2 0,0 1,-1.2,1.2h-0.8000000000000003a1.2,1.2 0,0 1,-1.2,-1.2v-5.1a1.2,1.2 0,0 1,1.2,-1.2z"/>
+            </group>
+            <path android:fillColor="#FFCF3F" android:strokeColor="#5A3D26" android:strokeWidth="1.2" android:pathData="M34.5,26.5a8,8 0,1 1,0,16a8,8 0,1 1,0,-16z"/>
+            <path android:fillColor="#3B2716" android:pathData="M33.7,30h1.6v4.3l2.9,1.7l-0.8,1.4l-3.7,-2.1z"/>
+          </vector>
+          EOF
+          cat > $J/MainActivity.java <<'EOF'
+          package com.dark.constructores;
+          import android.app.Activity;
+          import android.content.ClipData;
+          import android.content.ClipboardManager;
+          import android.content.Intent;
+          import android.graphics.Color;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.WindowInsets;
+          import android.view.WindowInsetsController;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.FrameLayout;
+          import org.json.JSONObject;
+          public class MainActivity extends Activity {
+            WebView w; FrameLayout root;
+            void js(String s) { if (w != null) w.evaluateJavascript(s, null); }
+            @Override protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              root = new FrameLayout(this);
+              root.setBackgroundColor(0xFF8FB8E0);
+              w = new WebView(this);
+              w.setBackgroundColor(Color.TRANSPARENT);
+              root.addView(w);
+              setContentView(root);
+              getWindow().setStatusBarColor(Color.TRANSPARENT);
+              getWindow().setNavigationBarColor(Color.TRANSPARENT);
+              if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(false);
+              else root.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+              root.setOnApplyWindowInsetsListener((v, ins) -> {
+                if (Build.VERSION.SDK_INT >= 30) {
+                  android.graphics.Insets s = ins.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
+                  v.setPadding(s.left, s.top, s.right, s.bottom);
+                  return WindowInsets.CONSUMED;
+                }
+                v.setPadding(ins.getSystemWindowInsetLeft(), ins.getSystemWindowInsetTop(), ins.getSystemWindowInsetRight(), ins.getSystemWindowInsetBottom());
+                return ins.consumeSystemWindowInsets();
+              });
+              WebSettings st = w.getSettings();
+              st.setJavaScriptEnabled(true);
+              st.setDomStorageEnabled(true);
+              Bridge br = new Bridge();
+              w.addJavascriptInterface(br, "AndroidBridge");
+              w.addJavascriptInterface(br, "AndroidClip");
+              w.setWebViewClient(new WebViewClient() {
+                @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                  if (r.getUrl().toString().startsWith("http")) { open(r.getUrl().toString()); return true; }
+                  return false;
+                }
+              });
+              w.loadUrl("file:///android_asset/index.html");
+            }
+            @Override protected void onResume() { super.onResume(); js("window.onAndroidResume&&onAndroidResume()"); }
+            @Override public void onBackPressed() {
+              w.evaluateJavascript("window.onAndroidBack?onAndroidBack():false", v -> { if (!"true".equals(v)) moveTaskToBack(true); });
+            }
+            void open(String u) { try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))); } catch (Exception e) { } }
+            class Bridge {
+              // clipboard: Sync reads the game's export directly
+              @JavascriptInterface public String get() {
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                ClipData c = cm == null ? null : cm.getPrimaryClip();
+                if (c == null || c.getItemCount() == 0) return "";
+                CharSequence t = c.getItemAt(0).coerceToText(MainActivity.this);
+                return t == null ? "" : t.toString();
+              }
+              @JavascriptInterface public void openUrl(String u) { runOnUiThread(() -> open(u)); }
+              @JavascriptInterface public String repo() {
+                try {
+                  java.io.InputStream in = getAssets().open("repo.txt");
+                  byte[] b = new byte[512]; int n = in.read(b); in.close();
+                  return n > 0 ? new String(b, 0, n, "UTF-8").trim() : "";
+                } catch (Exception e) { return ""; }
+              }
+              @JavascriptInterface public int buildNumber() {
+                try {
+                  android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+                  return Build.VERSION.SDK_INT >= 28 ? (int) pi.getLongVersionCode() : pi.versionCode;
+                } catch (Exception e) { return 0; }
+              }
+              @JavascriptInterface public void checkUpdate(String api) {
+                new Thread(() -> {
+                  String res = "";
+                  try {
+                    java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(api).openConnection();
+                    c.setRequestProperty("Accept", "application/vnd.github+json");
+                    c.setRequestProperty("User-Agent", "My-Builders-App");
+                    c.setConnectTimeout(10000); c.setReadTimeout(10000);
+                    if (c.getResponseCode() == 200) {
+                      java.io.InputStream in = c.getInputStream();
+                      java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                      byte[] buf = new byte[8192]; int n;
+                      while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                      res = o.toString("UTF-8");
+                    }
+                  } catch (Exception e) { }
+                  final String r = res;
+                  runOnUiThread(() -> js("window.onUpdateInfo&&onUpdateInfo(" + JSONObject.quote(r) + ")"));
+                }).start();
+              }
+              @JavascriptInterface public void setBars(String hex, boolean lightIcons) {
+                runOnUiThread(() -> {
+                  try { root.setBackgroundColor(Color.parseColor(hex)); } catch (Exception e) { }
+                  if (Build.VERSION.SDK_INT >= 30) {
+                    WindowInsetsController c = getWindow().getInsetsController();
+                    if (c != null) {
+                      int m = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                      c.setSystemBarsAppearance(lightIcons ? m : 0, m);
+                    }
+                  } else if (Build.VERSION.SDK_INT >= 26) {
+                    int f = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+                    if (lightIcons) f |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    root.setSystemUiVisibility(f);
+                  }
+                });
+              }
+            }
+          }
+          EOF
+      - name: Compilar
+        run: gradle :app:assembleDebug --no-daemon
+      - name: Renombrar
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk MyBuilders.apk
+          echo "VER=$(grep -o "APP_VERSION='[^']*'" index.html | cut -d"'" -f2)" >> $GITHUB_ENV
+      - name: Publicar descarga
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: My Builders v${{ env.VER }} (build ${{ github.run_number }})
+          files: MyBuilders.apk
