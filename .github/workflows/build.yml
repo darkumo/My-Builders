@@ -20,7 +20,7 @@ jobs:
         run: |
           P=app/src/main
           J=$P/java/com/dark/constructores
-          mkdir -p $P/assets $J $P/res/drawable
+          mkdir -p $P/assets $J $P/res/drawable $P/res/layout $P/res/xml $P/res/values
           cp index.html $P/assets/index.html
           # the app learns its own repo name, so update checks work whatever the repo is called
           echo "$GITHUB_REPOSITORY" > $P/assets/repo.txt
@@ -69,6 +69,14 @@ jobs:
                   <category android:name="android.intent.category.LAUNCHER"/>
                 </intent-filter>
               </activity>
+              <activity android:name=".WidgetConfig" android:exported="true" android:excludeFromRecents="true"
+                  android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+                <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/></intent-filter>
+              </activity>
+              <receiver android:name=".Widget" android:exported="true" android:label="My Builders">
+                <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+                <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info"/>
+              </receiver>
             </application>
           </manifest>
           EOF
@@ -107,10 +115,16 @@ jobs:
           import android.widget.FrameLayout;
           import org.json.JSONObject;
           public class MainActivity extends Activity {
-            WebView w; FrameLayout root; String insets = "";
+            static final String SYNC = "com.dark.constructores.SYNC";
+            WebView w; FrameLayout root; String insets = ""; boolean ready, wantSync;
+            // the widget's Sync button opens the app; run Sync once the page is loaded and the app has focus (clipboard needs it)
+            void maybeSync() { if (wantSync && ready && hasWindowFocus()) { wantSync = false; w.postDelayed(() -> js("window.onAndroidSync&&onAndroidSync()"), 250); } }
+            @Override protected void onNewIntent(Intent i) { super.onNewIntent(i); setIntent(i); if (SYNC.equals(i.getAction())) { wantSync = true; maybeSync(); } }
+            @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) maybeSync(); }
             void js(String s) { if (w != null) w.evaluateJavascript(s, null); }
             @Override protected void onCreate(Bundle b) {
               super.onCreate(b);
+              wantSync = SYNC.equals(getIntent().getAction());
               root = new FrameLayout(this);
               root.setBackgroundColor(0xFF8FB8E0);
               w = new WebView(this);
@@ -149,7 +163,7 @@ jobs:
                   if (r.getUrl().toString().startsWith("http")) { open(r.getUrl().toString()); return true; }
                   return false;
                 }
-                @Override public void onPageFinished(WebView v, String u) { if (!insets.isEmpty()) js(insets); }
+                @Override public void onPageFinished(WebView v, String u) { if (!insets.isEmpty()) js(insets); ready = true; maybeSync(); }
               });
               w.loadUrl("file:///android_asset/index.html");
             }
@@ -168,6 +182,9 @@ jobs:
                 return t == null ? "" : t.toString();
               }
               @JavascriptInterface public void openUrl(String u) { runOnUiThread(() -> open(u)); }
+              @JavascriptInterface public void setWidget(String json) { Widget.save(MainActivity.this, json); }
+              @JavascriptInterface public String widgetTheme() { return Widget.theme(MainActivity.this); }
+              @JavascriptInterface public void setWidgetTheme(String t) { Widget.setTheme(MainActivity.this, t); }
               // pages can't open the keyboard on their own in Android; this does it after the text box gets focus
               @JavascriptInterface public void showKeyboard() {
                 runOnUiThread(() -> {
@@ -235,6 +252,330 @@ jobs:
                   }
                 });
               }
+            }
+          }
+          EOF
+          cat > $P/res/layout/widget.xml <<'EOF'
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root"
+              android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+              android:padding="12dp" android:background="@drawable/wbg_classic">
+            <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="13sp" android:paddingTop="4dp" android:paddingBottom="6dp" android:textColor="#FFF7E6" android:visibility="gone"/>
+            <LinearLayout android:id="@+id/r0" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n0" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t0" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c0" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b0" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r1" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b1" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r2" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b2" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r3" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n3" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b3" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r4" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n4" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t4" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c4" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b4" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r5" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n5" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t5" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c5" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b5" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r6" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n6" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t6" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c6" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b6" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r7" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n7" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b7" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r8" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n8" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b8" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <LinearLayout android:id="@+id/r9" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/n9" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <TextView android:id="@+id/t9" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
+                <Chronometer android:id="@+id/c9" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
+              </LinearLayout>
+              <ImageView android:id="@+id/b9" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp" android:scaleType="fitXY"/>
+            </LinearLayout>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+              <TextView android:id="@+id/more" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textSize="11sp" android:alpha="0.7"/>
+              <TextView android:id="@+id/sync" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="4dp" android:paddingBottom="4dp" android:textSize="12sp" android:fontFamily="sans-serif-medium" android:text="⟳ Sync" android:background="@drawable/wpill_classic"/>
+            </LinearLayout>
+          </LinearLayout>
+          EOF
+          cat > $P/res/xml/widget_info.xml <<'EOF'
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="180dp" android:minHeight="80dp"
+              android:minResizeWidth="140dp" android:minResizeHeight="60dp"
+              android:targetCellWidth="4" android:targetCellHeight="2"
+              android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen"
+              android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget"
+              android:configure="com.dark.constructores.WidgetConfig"
+              android:widgetFeatures="reconfigurable|configuration_optional"
+              android:description="@string/wdesc"/>
+          EOF
+          cat > $P/res/values/strings.xml <<'EOF'
+          <resources><string name="wdesc">Builders, lab and pets</string></resources>
+          EOF
+          cat > $P/res/drawable/wbg_classic.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <corners android:radius="22dp"/>
+            <solid android:color="#F25A3D26"/>
+            <stroke android:width="2dp" android:color="#FF3B2716"/>
+          </shape>
+          EOF
+          cat > $P/res/drawable/wbg_oled.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <corners android:radius="22dp"/>
+            <solid android:color="#FF000000"/>
+            <stroke android:width="1dp" android:color="#FF262626"/>
+          </shape>
+          EOF
+          cat > $P/res/drawable/wbg_light.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <corners android:radius="22dp"/>
+            <solid android:color="#FFFFFFFF"/>
+            <stroke android:width="1dp" android:color="#FFE2E2DE"/>
+          </shape>
+          EOF
+          cat > $P/res/drawable/wpill_classic.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <corners android:radius="99dp"/>
+            <solid android:color="#40000000"/>
+          </shape>
+          EOF
+          cat > $P/res/drawable/wpill_oled.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <corners android:radius="99dp"/>
+            <solid android:color="#FF1A1A1A"/>
+          </shape>
+          EOF
+          cat > $P/res/drawable/wpill_light.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <corners android:radius="99dp"/>
+            <solid android:color="#FFF1F1EF"/>
+          </shape>
+          EOF
+          cat > $J/Widget.java <<'EOF'
+          package com.dark.constructores;
+          import android.app.AlarmManager;
+          import android.app.PendingIntent;
+          import android.appwidget.AppWidgetManager;
+          import android.appwidget.AppWidgetProvider;
+          import android.content.ComponentName;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Bitmap;
+          import android.graphics.Canvas;
+          import android.graphics.Paint;
+          import android.graphics.RectF;
+          import android.os.Bundle;
+          import android.os.SystemClock;
+          import android.view.View;
+          import android.widget.RemoteViews;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          // Home-screen widget: the app sends the rows (name, finish time, progress); this draws them
+          public class Widget extends AppWidgetProvider {
+            static final String REFRESH = "com.dark.constructores.REFRESH";
+            static final int N = 10;
+            static final int[] ROW = {R.id.r0,R.id.r1,R.id.r2,R.id.r3,R.id.r4,R.id.r5,R.id.r6,R.id.r7,R.id.r8,R.id.r9}, NAME = {R.id.n0,R.id.n1,R.id.n2,R.id.n3,R.id.n4,R.id.n5,R.id.n6,R.id.n7,R.id.n8,R.id.n9}, TM = {R.id.t0,R.id.t1,R.id.t2,R.id.t3,R.id.t4,R.id.t5,R.id.t6,R.id.t7,R.id.t8,R.id.t9}, CH = {R.id.c0,R.id.c1,R.id.c2,R.id.c3,R.id.c4,R.id.c5,R.id.c6,R.id.c7,R.id.c8,R.id.c9}, BAR = {R.id.b0,R.id.b1,R.id.b2,R.id.b3,R.id.b4,R.id.b5,R.id.b6,R.id.b7,R.id.b8,R.id.b9};
+            // background, text, bar track, bar, done bar, builder base bar, Sync pill, Sync text
+            static final int[] CLASSIC = {R.drawable.wbg_classic, 0xFFFFF7E6, 0xFF2A1B0F, 0xFF7CC83A, 0xFFF5B623, 0xFF4A5FC4, R.drawable.wpill_classic, 0xFFFFF7E6};
+            static final int[] OLED = {R.drawable.wbg_oled, 0xFFF2F2F2, 0xFF1C1C1C, 0xFF4ADE80, 0xFFFACC15, 0xFF5B6FE0, R.drawable.wpill_oled, 0xFFF2F2F2};
+            static final int[] LIGHT = {R.drawable.wbg_light, 0xFF161616, 0xFFE9E9E6, 0xFF16A34A, 0xFFEAB308, 0xFF31428F, R.drawable.wpill_light, 0xFF161616};
+            static SharedPreferences p(Context c) { return c.getSharedPreferences("widget", Context.MODE_PRIVATE); }
+            static String theme(Context c) { return p(c).getString("theme", "classic"); }
+            static boolean es(Context c) { try { return new JSONObject(p(c).getString("data", "{}")).optBoolean("es", true); } catch (Exception x) { return true; } }
+            static void save(Context c, String json) { p(c).edit().putString("data", json).apply(); updateAll(c); }
+            static void setTheme(Context c, String t) { p(c).edit().putString("theme", t).apply(); updateAll(c); }
+            static void updateAll(Context c) {
+              AppWidgetManager m = AppWidgetManager.getInstance(c);
+              int[] ids = m.getAppWidgetIds(new ComponentName(c, Widget.class));
+              for (int wid : ids) draw(c, m, wid);
+              schedule(c, ids.length > 0);
+            }
+            @Override public void onUpdate(Context c, AppWidgetManager m, int[] ids) { updateAll(c); }
+            @Override public void onAppWidgetOptionsChanged(Context c, AppWidgetManager m, int wid, Bundle o) { draw(c, m, wid); }
+            @Override public void onDisabled(Context c) { schedule(c, false); }
+            @Override public void onReceive(Context c, Intent i) {
+              super.onReceive(c, i);
+              if (REFRESH.equals(i.getAction())) updateAll(c);
+            }
+            static Bitmap bar(int w, int h, double pct, int track, int fill) {
+              Bitmap bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+              Canvas cv = new Canvas(bm);
+              Paint pa = new Paint(Paint.ANTI_ALIAS_FLAG);
+              float rr = h / 2f;
+              pa.setColor(track); cv.drawRoundRect(new RectF(0, 0, w, h), rr, rr, pa);
+              pa.setColor(fill); cv.drawRoundRect(new RectF(0, 0, Math.max(h, (float) (w * pct)), h), rr, rr, pa);
+              return bm;
+            }
+            static void draw(Context c, AppWidgetManager m, int wid) {
+              String th = theme(c);
+              int[] k = "oled".equals(th) ? OLED : "light".equals(th) ? LIGHT : CLASSIC;
+              RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget);
+              v.setInt(R.id.root, "setBackgroundResource", k[0]);
+              v.setInt(R.id.sync, "setBackgroundResource", k[6]);
+              v.setTextColor(R.id.sync, k[7]);
+              v.setTextColor(R.id.more, k[1]);
+              v.setTextColor(R.id.empty, k[1]);
+              float d = c.getResources().getDisplayMetrics().density;
+              Bundle o = m.getAppWidgetOptions(wid);
+              int wDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250), hDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 160);
+              if (wDp <= 0) wDp = 250;
+              if (hDp <= 0) hDp = 160;
+              // as many rows as fit in the size the widget was given
+              int fit = Math.max(1, Math.min(N, (hDp - 24 - 26) / 31));
+              JSONObject j;
+              try { j = new JSONObject(p(c).getString("data", "{}")); } catch (Exception x) { j = new JSONObject(); }
+              boolean es = j.optBoolean("es", true);
+              JSONArray rows = j.optJSONArray("rows");
+              int n = rows == null ? 0 : rows.length(), shown = Math.min(n, fit);
+              v.setViewVisibility(R.id.empty, n == 0 ? View.VISIBLE : View.GONE);
+              v.setTextViewText(R.id.empty, es ? "Abre My Builders y pega tu exportación" : "Open My Builders and paste your export");
+              long now = System.currentTimeMillis(), el = SystemClock.elapsedRealtime();
+              int bw = Math.max(40, (int) ((wDp - 24) * d)), bh = Math.max(3, (int) (4 * d));
+              for (int i = 0; i < N; i++) {
+                if (i >= shown) { v.setViewVisibility(ROW[i], View.GONE); continue; }
+                JSONObject r = rows.optJSONObject(i);
+                if (r == null) { v.setViewVisibility(ROW[i], View.GONE); continue; }
+                v.setViewVisibility(ROW[i], View.VISIBLE);
+                long end = r.optLong("e"), at = r.optLong("at", now), left = end - now;
+                double rem = r.optDouble("r", 0), tot = Math.max(1, r.optDouble("t", 1));
+                boolean bb = r.optBoolean("bb"), done = left <= 0;
+                v.setTextViewText(NAME[i], r.optString("n"));
+                v.setTextColor(NAME[i], k[1]);
+                v.setTextColor(TM[i], k[1]);
+                v.setTextColor(CH[i], k[1]);
+                if (done || left >= 86400000L) {
+                  // a day or more: "2d 4h" (redrawn every hour); finished: "Done!"
+                  v.setViewVisibility(CH[i], View.GONE);
+                  v.setViewVisibility(TM[i], View.VISIBLE);
+                  v.setTextViewText(TM[i], done ? (es ? "¡Listo!" : "Done!") : (left / 86400000L) + "d " + (left % 86400000L / 3600000L) + "h");
+                } else {
+                  // under a day: a live countdown the launcher ticks by itself
+                  v.setViewVisibility(TM[i], View.GONE);
+                  v.setViewVisibility(CH[i], View.VISIBLE);
+                  v.setChronometer(CH[i], el + left, null, true);
+                  v.setChronometerCountDown(CH[i], true);
+                }
+                double p0 = Math.max(0, Math.min(1, 1 - rem / tot));
+                double pct = done ? 1 : end > at ? p0 + (1 - p0) * Math.max(0, Math.min(1, (double) (now - at) / (end - at))) : p0;
+                v.setImageViewBitmap(BAR[i], bar(bw, bh, Math.max(0.03, pct), k[2], done ? k[4] : bb ? k[5] : k[3]));
+              }
+              v.setViewVisibility(R.id.more, n > shown ? View.VISIBLE : View.INVISIBLE);
+              v.setTextViewText(R.id.more, "+" + (n - shown) + (es ? " más" : " more"));
+              Intent oi = new Intent(c, MainActivity.class);
+              oi.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+              v.setOnClickPendingIntent(R.id.root, PendingIntent.getActivity(c, 1, oi, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+              Intent si = new Intent(c, MainActivity.class).setAction(MainActivity.SYNC);
+              si.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+              v.setOnClickPendingIntent(R.id.sync, PendingIntent.getActivity(c, 2, si, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+              m.updateAppWidget(wid, v);
+            }
+            // redraw when something finishes, when a "2d 4h" changes, and every 30 min for the bars (never wakes the phone)
+            static void schedule(Context c, boolean on) {
+              AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+              Intent ri = new Intent(c, Widget.class).setAction(REFRESH);
+              PendingIntent pi = PendingIntent.getBroadcast(c, 3, ri, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+              if (am == null) return;
+              am.cancel(pi);
+              if (!on) return;
+              long now = System.currentTimeMillis(), next = now + 30 * 60000L;
+              try {
+                JSONArray rows = new JSONObject(p(c).getString("data", "{}")).optJSONArray("rows");
+                if (rows != null) for (int i = 0; i < rows.length(); i++) {
+                  long left = rows.getJSONObject(i).optLong("e") - now;
+                  if (left <= 0) continue;
+                  next = Math.min(next, left >= 86400000L ? now + left % 3600000L + 1000 : now + left + 1000);
+                }
+              } catch (Exception x) { }
+              am.set(AlarmManager.RTC, next, pi);
+            }
+          }
+          EOF
+          cat > $J/WidgetConfig.java <<'EOF'
+          package com.dark.constructores;
+          import android.app.Activity;
+          import android.appwidget.AppWidgetManager;
+          import android.content.Intent;
+          import android.os.Bundle;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          // Opens from the launcher's "Edit widget" (long-press): pick one of the 3 themes
+          public class WidgetConfig extends Activity {
+            @Override protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              int wid = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+              final Intent res = new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, wid);
+              setResult(RESULT_CANCELED, res);
+              boolean es = Widget.es(this);
+              int pad = (int) (20 * getResources().getDisplayMetrics().density);
+              LinearLayout l = new LinearLayout(this);
+              l.setOrientation(LinearLayout.VERTICAL);
+              l.setPadding(pad, pad, pad, pad / 2);
+              TextView title = new TextView(this);
+              title.setText(es ? "Tema del widget" : "Widget theme");
+              title.setTextSize(20);
+              title.setPadding(0, 0, 0, pad / 2);
+              l.addView(title);
+              String cur = Widget.theme(this);
+              String[][] opts = {{"classic", es ? "Clásico" : "Classic"}, {"oled", "OLED"}, {"light", es ? "Claro" : "Light"}};
+              for (String[] o : opts) {
+                Button bt = new Button(this);
+                bt.setAllCaps(false);
+                bt.setText((o[0].equals(cur) ? "✓  " : "") + o[1]);
+                bt.setOnClickListener(x -> { Widget.setTheme(this, o[0]); setResult(RESULT_OK, res); finish(); });
+                l.addView(bt);
+              }
+              setContentView(l);
             }
           }
           EOF
