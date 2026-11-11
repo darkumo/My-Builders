@@ -59,7 +59,11 @@ jobs:
           cat > $P/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET"/>
-            <application android:label="My Builders" android:icon="@drawable/ic"
+            <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+            <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+            <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32"/>
+            <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+            <application android:label="My Builders" android:icon="@mipmap/ic"
                 android:theme="@android:style/Theme.Material.NoActionBar">
               <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
                   android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
@@ -73,6 +77,10 @@ jobs:
                   android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
                 <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/></intent-filter>
               </activity>
+              <receiver android:name=".Notifier" android:exported="false"/>
+              <receiver android:name=".Boot" android:exported="true">
+                <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/></intent-filter>
+              </receiver>
               <receiver android:name=".Widget" android:exported="true" android:label="My Builders">
                 <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
                 <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info"/>
@@ -80,19 +88,243 @@ jobs:
             </application>
           </manifest>
           EOF
-          cat > $P/res/drawable/ic.xml <<'EOF'
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
-            <path android:fillColor="#5A3D26" android:pathData="M11,0h26a11,11 0,0 1,11,11v26a11,11 0,0 1,-11,11h-26a11,11 0,0 1,-11,-11v-26a11,11 0,0 1,11,-11z"/>
-            <group android:rotation="40" android:pivotX="22" android:pivotY="22">
-              <path android:fillColor="#C8955A" android:pathData="M22.0,13h0.0a1.5,1.5 0,0 1,1.5,1.5v21.0a1.5,1.5 0,0 1,-1.5,1.5h-0.0a1.5,1.5 0,0 1,-1.5,-1.5v-21.0a1.5,1.5 0,0 1,1.5,-1.5z"/>
-              <path android:fillColor="#D9DDE3" android:pathData="M15,8h14a2,2 0,0 1,2,2v3.5a2,2 0,0 1,-2,2h-14a2,2 0,0 1,-2,-2v-3.5a2,2 0,0 1,2,-2z"/>
-              <path android:fillColor="#AEB4BD" android:pathData="M14.2,8h0.8000000000000003a1.2,1.2 0,0 1,1.2,1.2v5.1a1.2,1.2 0,0 1,-1.2,1.2h-0.8000000000000003a1.2,1.2 0,0 1,-1.2,-1.2v-5.1a1.2,1.2 0,0 1,1.2,-1.2z"/>
-              <path android:fillColor="#AEB4BD" android:pathData="M29.0,8h0.8000000000000003a1.2,1.2 0,0 1,1.2,1.2v5.1a1.2,1.2 0,0 1,-1.2,1.2h-0.8000000000000003a1.2,1.2 0,0 1,-1.2,-1.2v-5.1a1.2,1.2 0,0 1,1.2,-1.2z"/>
-            </group>
-            <path android:fillColor="#FFCF3F" android:strokeColor="#5A3D26" android:strokeWidth="1.2" android:pathData="M34.5,26.5a8,8 0,1 1,0,16a8,8 0,1 1,0,-16z"/>
-            <path android:fillColor="#3B2716" android:pathData="M33.7,30h1.6v4.3l2.9,1.7l-0.8,1.4l-3.7,-2.1z"/>
-          </vector>
+          # app icon: Supercell fan-kit hammer on the game's yellow button (adaptive layers + a plain one for old Android)
+          mkdir -p $P/res/drawable-nodpi $P/res/mipmap-xxxhdpi $P/res/mipmap-anydpi-v26
+          base64 -d > $P/res/drawable-nodpi/ic_fg.webp <<'EOF'
+          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
+          eg64oD2Ac9NMAAAAAAAAAAAAAAAAAA==
+          EOF
+          base64 -d > $P/res/drawable-nodpi/ic_bg.webp <<'EOF'
+          UklGRvwDAABXRUJQVlA4IPADAACQNACdASqwAbABPjEYi0SiIaEQBAAgAwS0t3C69w65AdWxKMA//PgH4AfWj12ACewD32ych77Z
+          OQ99snIe+2TkPfbJyHvts0N3nqKn7z1FT956ip+5bJdrxcnIe+2TkPfd3iHWTbYCrJtsBVk22Apon6I6ybbAVZNtgKsm2wCRo/RH
+          WTbYCrJtsBVk213gvv/t77zR5L7/7e+80eS+/njrJtsBVk22AqybbAVZIoEdZNtgKsm2wFWTbYCq6paVAsl2vFych77ZZ37z1FT9
+          56ip+89RU/eZ5U/eeoqfvPUVP3nqKn7nAKn7z1FT956ip+89RU+4LJdrxcnIe+2TkPf4jxDrJtsBVk22AqybbAJOa9RU/eeoqfvP
+          UVP3np/A99snIe+2TkPfbJ6u89RU/eeoqfvPUVP3nmpWAqybbAVZNtgKsm2wFMJdpUCyXa8XJyHvtm77MPEmx0INBavwShUothRp
+          6SizDbr4IUks5FNZdlv5+GM7iHWTbYCrJtsBVk22AquwCIpJsdCDQWr8EoVKN3ZobvPUVP3nqKn7z1FT9y2S7Xi5OQ99snIe9IAA
+          /vj/6//2u1/2u1/2u1//a7X//SbP8En/BJ/8cwAAAAvi4eAAARDIAAAAS3W2P9YFX2QuMQxuNwNRhd6y5cuXLly5i7TKFkH0wUxT
+          XToy8P9vB9MFMU106MvD/bwfTB2CAAAAAAAL2odQlLqsTuPSn6vZe5ddlrAwshY9d6Se6TpdVidx6U/V7L3LrstRAcYUbX2ADVx3
+          JqyETWx7qI0kcZBHXgWb2zg0+Q/rkP65D+uQ/rkP65D+uRA7uXM2M88v7sZ55f3Yzzy/uxnnl/ddQAAAAAAAAABLOHONSquQvXkE
+          7kL15BO5C9eQTuQvXkE7kL15BO5C9eQTuQvXkE7kL15BO5F7JhYPVivbikAV7cUgCvbikAV7cUgCvbikAV7cUgC9NnaAAAAAAAHc
+          P1QHinRFUB4p0RVAeKdEVQHinRFUB4p0RVAeKdEVQHinRFUB4p0RVAeK7PAAAAAAAAAAAQ+j+PgdLlAXTbR/dnKAum2j+7OUBdNt
+          H90gAAAAAAApZfr6NdC2rIYwAtqyGMNDimsWih6goEXxM1E+StPYSCemzaFGWJ8laelgAAAAAAFrdXtSCiJ/Xcg1IKIn9dyDUgoi
+          f13INSCiJ/Xcg1+cObPeuBa4+0DIC5NIbxWUwtmLXH2gZAXJpDeKymFsxa4+0DIC5NIbxWUwtmLXJNAAAAAAAAAAAI32oKJSV2NJ
+          UT4lJXY0lRPiUldjSVE+JSV2NJUT5epgAAAAAAAAAAAA6I5znOc5znOc5znOc5znOc5FAAA=
+          EOF
+          base64 -d > $P/res/drawable-nodpi/ic_mono.webp <<'EOF'
+          UklGRtwCAABXRUJQVlA4TNACAAAvr8FrEA8w//M///Mf8JAbSVYlMI/CwCQEMhGhQQZKiUyEJxcTg+IZB9yrfZynT0T/J4D++/9P
+          iD90FHYqKrOKzhw0DGa2CiYzJwX89HBlwXB15dDaKqL1FRuwsfFgc5PAeG+g8oGDKgceqh0EqH4QoYaSeZCg+BQpHxmgcmSBqpJ2
+          9Dvg9CNmnPHCwvBLj5LfRJTyJqHUN2xA2isL0l85kPEqgMxXEYRfJ4z8jrUYiCJgIaqAg2hKuoCHGAJBSYSYSlgwKWGErKRcxADU
+          T2lK+qeMixDgvEdSEhFYMijxShzCvIdFGBJGiUXo93AITcIrCQj1HhGhSCSEfA9GIBGDMO9hEYaEQ+gSHqHdIyBUiYhQJNK9sgQj
+          kIhBmBL2XkPCIXQJj9DuERCqREQoEuleWYIRSMQgzHtYhCHhEPo9PEKTCAhVSZGIShJClmAE0jIljBKLMJR0CXevpqRKeISiJN8j
+          IJCW+SlDSVfSBDxEVzKUTAF3MRa0CFnCIBQlVYIQm0CC6ALxYkMgQEwBD8E6soRDKBIWoSppEkYJIXYlQyBBTIEIwTqyREAoEh6h
+          KmkSTolF6EqGhEGYEoTIOrJEQigSEaEqaatfRwGhr34eeYSxckcOYa7sBGMJC5A3ZpwYgLKhfkKAdZWoHSSEtopUDyJC35WDgDBW
+          gTLWXHmiA4/Aa0c0dw4gbyxR21mAsjFEeWcA6gmNDQG2DRFRWSWEvkoPmouIMFZxURceYZ7RwiHwOqz6wwLkjV/lBwGWjVsRMUeE
+          +o66Q2gbe4DZNwZsKJkbAud1AsubCFaU1E0Aaxv/CX3jwMbGgs2NAWMdeUfYZZPAqpK2iUrCp3iwvnFK7CeMjVFCOtKnRCXhU7wS
+          h9ZX9hvayigh9KoqwZVFhMuL8BG08Eoc3tRk8cbD4PUH4TcllZmTgszMUQExc9DQmb2Gymw1ECdS2YOO//7/AyM=
+          EOF
+          base64 -d > $P/res/mipmap-xxxhdpi/ic.webp <<'EOF'
+          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
+          OBpsx0pgAABGVoswS1KsAAAJSAAA
+          EOF
+          cat > $P/res/mipmap-anydpi-v26/ic.xml <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@drawable/ic_bg"/>
+            <foreground android:drawable="@drawable/ic_fg"/>
+            <monochrome android:drawable="@drawable/ic_mono"/>
+          </adaptive-icon>
           EOF
           cat > $J/MainActivity.java <<'EOF'
           package com.dark.constructores;
@@ -168,6 +400,7 @@ jobs:
               w.loadUrl("file:///android_asset/index.html");
             }
             @Override protected void onResume() { super.onResume(); js("window.onAndroidResume&&onAndroidResume()"); }
+            @Override public void onRequestPermissionsResult(int rq, String[] ps, int[] gr) { js("window.onNotifPerm&&onNotifPerm()"); }
             @Override public void onBackPressed() {
               w.evaluateJavascript("window.onAndroidBack?onAndroidBack():false", v -> { if (!"true".equals(v)) moveTaskToBack(true); });
             }
@@ -184,6 +417,16 @@ jobs:
               @JavascriptInterface public void openUrl(String u) { runOnUiThread(() -> open(u)); }
               @JavascriptInterface public void setWidget(String json) { Widget.save(MainActivity.this, json); }
               @JavascriptInterface public String widgetTheme() { return Widget.theme(MainActivity.this); }
+              @JavascriptInterface public void setWidgetIcons(boolean on) { Widget.setIcons(MainActivity.this, on); }
+              @JavascriptInterface public void setNotif(String json) { Notifier.setConfig(MainActivity.this, json); }
+              @JavascriptInterface public boolean notifAllowed() {
+                return Build.VERSION.SDK_INT < 33 || checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED;
+              }
+              @JavascriptInterface public void askNotif() {
+                runOnUiThread(() -> {
+                  if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 7);
+                });
+              }
               @JavascriptInterface public void setWidgetTheme(String t) { Widget.setTheme(MainActivity.this, t); }
               // pages can't open the keyboard on their own in Android; this does it after the text box gets focus
               @JavascriptInterface public void showKeyboard() {
@@ -262,6 +505,7 @@ jobs:
               <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="13sp" android:paddingTop="4dp" android:paddingBottom="6dp" android:textColor="#FFF7E6" android:visibility="gone"/>
               <LinearLayout android:id="@+id/r0" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m0" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n0" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t0" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c0" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -270,6 +514,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r1" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m1" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -278,6 +523,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r2" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m2" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -286,6 +532,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r3" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m3" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n3" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -294,6 +541,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r4" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m4" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n4" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t4" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c4" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -302,6 +550,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r5" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m5" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n5" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t5" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c5" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -310,6 +559,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r6" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m6" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n6" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t6" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c6" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -318,6 +568,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r7" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m7" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n7" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -326,6 +577,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r8" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m8" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n8" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -334,6 +586,7 @@ jobs:
               </LinearLayout>
               <LinearLayout android:id="@+id/r9" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginBottom="7dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                  <ImageView android:id="@+id/m9" android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp" android:scaleType="fitCenter" android:visibility="gone"/>
                   <TextView android:id="@+id/n9" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:singleLine="true" android:ellipsize="end" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <TextView android:id="@+id/t9" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium"/>
                   <Chronometer android:id="@+id/c9" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:visibility="gone"/>
@@ -424,6 +677,7 @@ jobs:
           public class Widget extends AppWidgetProvider {
             static final String REFRESH = "com.dark.constructores.REFRESH";
             static final int N = 10;
+            static final int[] ICO = {R.id.m0,R.id.m1,R.id.m2,R.id.m3,R.id.m4,R.id.m5,R.id.m6,R.id.m7,R.id.m8,R.id.m9};
             static final int[] ROW = {R.id.r0,R.id.r1,R.id.r2,R.id.r3,R.id.r4,R.id.r5,R.id.r6,R.id.r7,R.id.r8,R.id.r9}, NAME = {R.id.n0,R.id.n1,R.id.n2,R.id.n3,R.id.n4,R.id.n5,R.id.n6,R.id.n7,R.id.n8,R.id.n9}, TM = {R.id.t0,R.id.t1,R.id.t2,R.id.t3,R.id.t4,R.id.t5,R.id.t6,R.id.t7,R.id.t8,R.id.t9}, CH = {R.id.c0,R.id.c1,R.id.c2,R.id.c3,R.id.c4,R.id.c5,R.id.c6,R.id.c7,R.id.c8,R.id.c9}, BAR = {R.id.b0,R.id.b1,R.id.b2,R.id.b3,R.id.b4,R.id.b5,R.id.b6,R.id.b7,R.id.b8,R.id.b9};
             // background, text, bar track, bar, done bar, builder base bar, Sync pill, Sync text
             static final int[] CLASSIC = {R.drawable.wbg_classic, 0xFFFFF7E6, 0xFF2A1B0F, 0xFF7CC83A, 0xFFF5B623, 0xFF4A5FC4, R.drawable.wpill_classic, 0xFFFFF7E6};
@@ -435,7 +689,22 @@ jobs:
             static String theme(Context c) { return p(c).getString("theme", "classic"); }
             static String theme(Context c, int wid) { return p(c).getString("t_" + wid, theme(c)); }
             static String village(Context c, int wid) { return p(c).getString("v_" + wid, ""); }
-            static void save(Context c, String json) { p(c).edit().putString("data", json).apply(); updateAll(c); }
+            static boolean icons(Context c, int wid) { return p(c).getBoolean("i_" + wid, p(c).getBoolean("icons", false)); }
+            // from the app: icons on or off for every widget
+            static void setIcons(Context c, boolean on) {
+              SharedPreferences.Editor e = p(c).edit().putBoolean("icons", on);
+              for (int wid : ids(c)) e.putBoolean("i_" + wid, on);
+              e.apply(); updateAll(c);
+            }
+            static android.graphics.Bitmap icon(JSONObject ic, String key) {
+              try {
+                String u = ic.optString(key, "");
+                if (u.isEmpty()) return null;
+                byte[] b = android.util.Base64.decode(u.substring(u.indexOf(',') + 1), android.util.Base64.DEFAULT);
+                return android.graphics.BitmapFactory.decodeByteArray(b, 0, b.length);
+              } catch (Exception x) { return null; }
+            }
+            static void save(Context c, String json) { p(c).edit().putString("data", json).apply(); updateAll(c); Notifier.dataChanged(c); }
             // from the app: one theme for every widget
             static void setTheme(Context c, String t) {
               SharedPreferences.Editor e = p(c).edit().putString("theme", t);
@@ -443,8 +712,8 @@ jobs:
               e.apply(); updateAll(c);
             }
             // from a widget's Edit screen: just that widget
-            static void setOne(Context c, int wid, String t, String v) {
-              p(c).edit().putString("t_" + wid, t).putString("v_" + wid, v).apply();
+            static void setOne(Context c, int wid, String t, String v, boolean ic) {
+              p(c).edit().putString("t_" + wid, t).putString("v_" + wid, v).putBoolean("i_" + wid, ic).apply();
               draw(c, AppWidgetManager.getInstance(c), wid);
               schedule(c, true);
             }
@@ -459,7 +728,7 @@ jobs:
             @Override public void onAppWidgetOptionsChanged(Context c, AppWidgetManager m, int wid, Bundle o) { draw(c, m, wid); }
             @Override public void onDeleted(Context c, int[] wids) {
               SharedPreferences.Editor e = p(c).edit();
-              for (int wid : wids) { e.remove("t_" + wid); e.remove("v_" + wid); }
+              for (int wid : wids) { e.remove("t_" + wid); e.remove("v_" + wid); e.remove("i_" + wid); }
               e.apply();
             }
             @Override public void onDisabled(Context c) { schedule(c, false); }
@@ -514,6 +783,9 @@ jobs:
               JSONObject dj = data(c);
               boolean es = dj.optBoolean("es", true);
               JSONArray rows = rowsFor(dj, village(c, wid));
+              boolean showIc = icons(c, wid);
+              JSONObject icd = dj.optJSONObject("ic");
+              java.util.HashMap<String, android.graphics.Bitmap> cache = new java.util.HashMap<>();
               int n = rows == null ? 0 : rows.length(), shown = Math.min(n, fit);
               v.setViewVisibility(R.id.empty, n == 0 ? View.VISIBLE : View.GONE);
               v.setTextViewText(R.id.empty, es ? "Abre My Builders y pega tu exportación" : "Open My Builders and paste your export");
@@ -527,6 +799,9 @@ jobs:
                 double rem = r.optDouble("r", 0), tot = Math.max(1, r.optDouble("t", 1));
                 boolean bb = r.optBoolean("bb"), done = left <= 0;
                 v.setTextViewText(NAME[i], r.optString("n"));
+                android.graphics.Bitmap bmp = null;
+                if (showIc && icd != null) { String ik = r.optString("ik", ""); if (!cache.containsKey(ik)) cache.put(ik, icon(icd, ik)); bmp = cache.get(ik); }
+                if (bmp != null) { v.setImageViewBitmap(ICO[i], bmp); v.setViewVisibility(ICO[i], View.VISIBLE); } else v.setViewVisibility(ICO[i], View.GONE);
                 v.setTextColor(NAME[i], k[1]);
                 v.setTextColor(TM[i], k[1]);
                 v.setTextColor(CH[i], k[1]);
@@ -585,7 +860,7 @@ jobs:
           import org.json.JSONObject;
           // Opens when the widget is added and from the launcher's "Edit" (long-press): pick this widget's village and theme
           public class WidgetConfig extends Activity {
-            int wid; String th, vil; boolean es; Intent res; LinearLayout l; int pad;
+            int wid; String th, vil; boolean es, ic; Intent res; LinearLayout l; int pad;
             @Override protected void onCreate(Bundle b) {
               super.onCreate(b);
               wid = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
@@ -594,6 +869,7 @@ jobs:
               es = Widget.es(this);
               th = Widget.theme(this, wid);
               vil = Widget.village(this, wid);
+              ic = Widget.icons(this, wid);
               if (vil.isEmpty()) vil = Widget.data(this).optString("cur");
               pad = (int) (20 * getResources().getDisplayMetrics().density);
               l = new LinearLayout(this);
@@ -635,13 +911,129 @@ jobs:
                 bt.setOnClickListener(x -> { th = o[0]; build(); });
                 l.addView(bt);
               }
+              label(es ? "Íconos" : "Icons", 14);
+              Button bi = new Button(this);
+              bi.setAllCaps(false);
+              bi.setText(ic ? (es ? "✓  Con íconos" : "✓  With icons") : (es ? "Sin íconos (minimalista)" : "No icons (minimal)"));
+              bi.setOnClickListener(x -> { ic = !ic; build(); });
+              l.addView(bi);
               Button ok = new Button(this);
               ok.setAllCaps(false);
               ok.setText(es ? "Listo" : "Done");
-              ok.setOnClickListener(x -> { Widget.setOne(this, wid, th, vil); setResult(RESULT_OK, res); finish(); });
+              ok.setOnClickListener(x -> { Widget.setOne(this, wid, th, vil, ic); setResult(RESULT_OK, res); finish(); });
               l.addView(ok);
             }
           }
+          EOF
+          cat > $J/Notifier.java <<'EOF'
+          package com.dark.constructores;
+          import android.app.AlarmManager;
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.os.Build;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          // Upgrade-finished notifications. Uses the same rows the app sends to the widget; one alarm for the next finish at a time.
+          public class Notifier extends BroadcastReceiver {
+            static final String FIRE = "com.dark.constructores.NOTIFY";
+            static SharedPreferences p(Context c) { return c.getSharedPreferences("notif", Context.MODE_PRIVATE); }
+            static JSONObject cfg(Context c) { try { return new JSONObject(p(c).getString("cfg", "{}")); } catch (Exception x) { return new JSONObject(); } }
+            static boolean wants(JSONObject cfg, String g) { return cfg.optBoolean("on", false) && cfg.optBoolean(g, true); }
+            static void setConfig(Context c, String json) { p(c).edit().putString("cfg", json).apply(); schedule(c); }
+            // new data from the app: anything already finished was seen there, so don't announce it
+            static void dataChanged(Context c) {
+              long now = System.currentTimeMillis();
+              if (p(c).getLong("last", 0) < now) p(c).edit().putLong("last", now).apply();
+              schedule(c);
+            }
+            @Override public void onReceive(Context c, Intent i) { if (FIRE.equals(i.getAction())) { fire(c); schedule(c); } }
+            static PendingIntent alarm(Context c) {
+              Intent i = new Intent(c, Notifier.class).setAction(FIRE);
+              return PendingIntent.getBroadcast(c, 10, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            }
+            static void schedule(Context c) {
+              AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+              if (am == null) return;
+              PendingIntent pi = alarm(c);
+              am.cancel(pi);
+              JSONObject cfg = cfg(c);
+              if (!cfg.optBoolean("on", false)) return;
+              long now = System.currentTimeMillis(), last = p(c).getLong("last", now), next = Long.MAX_VALUE;
+              JSONArray vs = Widget.data(c).optJSONArray("v");
+              if (vs != null) for (int a = 0; a < vs.length(); a++) {
+                JSONObject vo = vs.optJSONObject(a);
+                JSONArray rows = vo == null ? null : vo.optJSONArray("rows");
+                if (rows != null) for (int k = 0; k < rows.length(); k++) {
+                  JSONObject r = rows.optJSONObject(k);
+                  if (r == null || !wants(cfg, r.optString("g", "b"))) continue;
+                  long e = r.optLong("e");
+                  if (e > Math.max(now, last)) next = Math.min(next, e);
+                }
+              }
+              if (next == Long.MAX_VALUE) return;
+              if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
+              else am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
+            }
+            static void fire(Context c) {
+              long now = System.currentTimeMillis() + 30000, last = p(c).getLong("last", 0);
+              JSONObject cfg = cfg(c), d = Widget.data(c);
+              boolean es = d.optBoolean("es", true);
+              NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+              if (nm == null) return;
+              if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel ch = new NotificationChannel("done", es ? "Mejoras terminadas" : "Finished upgrades", NotificationManager.IMPORTANCE_DEFAULT);
+                nm.createNotificationChannel(ch);
+              }
+              JSONArray vs = d.optJSONArray("v");
+              int many = vs == null ? 0 : vs.length();
+              if (vs != null) for (int a = 0; a < vs.length(); a++) {
+                JSONObject vo = vs.optJSONObject(a);
+                JSONArray rows = vo == null ? null : vo.optJSONArray("rows");
+                if (rows != null) for (int k = 0; k < rows.length(); k++) {
+                  JSONObject r = rows.optJSONObject(k);
+                  if (r == null || !wants(cfg, r.optString("g", "b"))) continue;
+                  long e = r.optLong("e");
+                  if (e <= last || e > now) continue;
+                  String g = r.optString("g", "b");
+                  String title = "l".equals(g) ? (es ? "Investigación terminada" : "Research finished")
+                    : "p".equals(g) ? (es ? "Mascota mejorada" : "Pet upgraded")
+                    : "bb".equals(g) ? (es ? "Aldea nocturna: mejora terminada" : "Builder Base: upgrade finished")
+                    : (es ? "Mejora terminada" : "Upgrade finished");
+                  String text = r.optString("n") + (r.has("lv") ? " → " + r.optInt("lv") : "");
+                  Intent oi = new Intent(c, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                  PendingIntent open = PendingIntent.getActivity(c, 1, oi, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, "done") : new Notification.Builder(c);
+                  b.setSmallIcon(R.drawable.ic_stat).setContentTitle(title).setContentText(text).setAutoCancel(true).setContentIntent(open).setWhen(e).setShowWhen(true);
+                  if (many > 1) b.setSubText(vo.optString("name"));
+                  try { nm.notify((vo.optString("k") + r.optString("n") + e).hashCode(), b.build()); } catch (Exception x) { }
+                }
+              }
+              p(c).edit().putLong("last", now).apply();
+            }
+          }
+          EOF
+          cat > $J/Boot.java <<'EOF'
+          package com.dark.constructores;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          // alarms are cleared on reboot: set them again
+          public class Boot extends BroadcastReceiver {
+            @Override public void onReceive(Context c, Intent i) {
+              if (Intent.ACTION_BOOT_COMPLETED.equals(i.getAction())) { Notifier.schedule(c); Widget.updateAll(c); }
+            }
+          }
+          EOF
+          cat > $P/res/drawable/ic_stat.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+            <path android:fillColor="#FFFFFFFF" android:pathData="M14.6,2.3l7.1,7.1-2.1,2.1-1.4,-1.4-2.8,2.8-2.8,-2.8 2.8,-2.8-1.4,-1.4zM9.6,10.9l2.8,2.8-8.5,8.5-2.8,-2.8z"/>
+          </vector>
           EOF
       - name: Compilar
         run: gradle :app:assembleDebug --no-daemon
